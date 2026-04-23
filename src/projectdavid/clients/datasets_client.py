@@ -144,9 +144,12 @@ class DatasetsClient(BaseAPIClient):
     # ------------------------------------------------------------------
 
     def list(
-        self, status: Optional[str] = None, limit: int = 50
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> validator.DatasetList:
-        params: Dict[str, Union[str, int]] = {"limit": limit}
+        params: Dict[str, Union[str, int]] = {"limit": limit, "offset": offset}
         if status:
             params["status"] = status
 
@@ -158,7 +161,27 @@ class DatasetsClient(BaseAPIClient):
     # DELETE
     # ------------------------------------------------------------------
 
-    def delete(self, dataset_id: str) -> validator.DatasetDeleted:
-        response = self.client.delete(self._get_url(f"/v1/datasets/{dataset_id}"))
+    def delete(
+        self,
+        dataset_id: str,
+        hard: bool = False,
+    ) -> validator.DatasetDeleted:
+        """
+        Delete a dataset. Default is soft-delete (reversible — record
+        marked deleted but DB rows preserved).
+
+        Set hard=True to permanently remove the Dataset row and mark
+        the backing File row for filesystem purge by the cleanup daemon.
+        Hard-delete is irreversible.
+
+        Both modes raise httpx.HTTPStatusError(409) if the dataset is
+        currently being prepared, or if it is referenced by any active
+        training job (queued, in_progress, cancelling).
+        """
+        params = {"hard": "true"} if hard else {}
+        response = self.client.delete(
+            self._get_url(f"/v1/datasets/{dataset_id}"),
+            params=params,
+        )
         response.raise_for_status()
         return validator.DatasetDeleted.model_validate(response.json())
