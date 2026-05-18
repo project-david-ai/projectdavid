@@ -1,3 +1,23 @@
+# [1.97.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.96.6...v1.97.0-dev.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **deployments:** add trailing slash to list and deactivate_all endpoints ([6e98bb5](https://github.com/project-david-ai/projectdavid/commit/6e98bb5f686b0abd6fcfad698c1051a59f15c0cc))
+* **deployments:** add trailing slash to list and deactivate_all endpoints ([9d58080](https://github.com/project-david-ai/projectdavid/commit/9d58080119365ed599aa0a60a3f39918e475dd10))
+* **sdk:** remove unused DeploymentUpdateRequest import, fix update() payload to use dict comprehension with exclude-None ([f029e40](https://github.com/project-david-ai/projectdavid/commit/f029e40573e46cd8292279af25d31534f11841e4))
+* **stream:** explicitly close aiter_lines in finally block — prevents Task destroyed RuntimeWarning from dangling aiter_raw coroutines ([6d46184](https://github.com/project-david-ai/projectdavid/commit/6d461848e01ed9b0589891d9190f866d33982ac0))
+* **stream:** explicitly close async generator in stream_chunks finally block — prevents Task destroyed RuntimeWarning from dangling aiter_bytes coroutines ([b073fed](https://github.com/project-david-ai/projectdavid/commit/b073fed1e2865a542ce3933db066455042670346))
+
+
+### Features
+
+* **sdk:** add DeploymentsClient and deprecate ModelsClient activation methods ([b66e81c](https://github.com/project-david-ai/projectdavid/commit/b66e81c9ee7f91ad426e332f1386b4d711541129))
+* **sdk:** add DeploymentsClient and deprecate ModelsClient activation methods ([b3c77e5](https://github.com/project-david-ai/projectdavid/commit/b3c77e570a6a6c5832d66c6a851d71d556ae2bda))
+* **sdk:** align DeploymentsClient with hyperparam API ([05c4a56](https://github.com/project-david-ai/projectdavid/commit/05c4a56f4aeb7d37d8df0741596d23991e3953db))
+* **sdk:** align DeploymentsClient with hyperparam API ([a181456](https://github.com/project-david-ai/projectdavid/commit/a181456fd80335b5c517e89151a3758703737061))
+* **sdk:** Delete _version.py ([851c27b](https://github.com/project-david-ai/projectdavid/commit/851c27b1e2634e9d957d6b2b84e017060139a2fc))
+
 # [1.99.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.98.2-dev.3...v1.99.0-dev.1) (2026-04-12)
 
 
