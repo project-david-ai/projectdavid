@@ -167,3 +167,5 @@ docker-compose.runtime.yml
 #.idea/
 .idea/
 .venv/
+
+.env
