@@ -1,3 +1,10 @@
+# [1.110.0](https://github.com/project-david-ai/projectdavid/compare/v1.109.0...v1.110.0) (2026-09-26)
+
+
+### Features
+
+* add ergonomic MCP tool discovery ([746bc9e](https://github.com/project-david-ai/projectdavid/commit/746bc9eee3640e71f91363648851c97b35bf509f))
+
 # [1.109.0](https://github.com/project-david-ai/projectdavid/compare/v1.108.0...v1.109.0) (2026-09-26)
 
 
