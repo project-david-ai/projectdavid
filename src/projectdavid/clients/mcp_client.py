@@ -2,15 +2,131 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from collections.abc import Sequence
+from copy import deepcopy
+from typing import Any, Optional, overload
 
 import httpx
 from projectdavid_common import UtilsInterface, ValidationInterface
+from pydantic import BaseModel, ConfigDict
 
 from projectdavid.clients.base_client import BaseAPIClient
 
 validator = ValidationInterface()
 logging_utility = UtilsInterface.LoggingUtility()
+
+
+_MAX_DISCOVERY_PAGES = 100
+
+
+class McpDiscoveredTool(BaseModel):
+    """One tool advertised by a registered MCP server."""
+
+    model_config = ConfigDict(frozen=True)
+
+    server_id: str
+    remote_name: str
+    canonical_id: str
+    provider_name: str
+    definition: dict[str, Any]
+
+    @property
+    def name(self) -> str:
+        """Human-facing MCP tool name."""
+        return self.remote_name
+
+    @property
+    def description(self) -> str | None:
+        """Function description advertised by the MCP server, when present."""
+        function = self.definition.get("function")
+
+        if not isinstance(function, dict):
+            return None
+
+        description = function.get("description")
+
+        return description if isinstance(description, str) else None
+
+
+class McpToolDiscoveryPage(BaseModel):
+    """Typed representation of one Core MCP discovery page."""
+
+    model_config = ConfigDict(frozen=True)
+
+    tools: list[McpDiscoveredTool]
+    next_cursor: str | None = None
+
+
+class McpToolCollection(Sequence[McpDiscoveredTool]):
+    """Read-only ergonomic view over discovered MCP tools."""
+
+    def __init__(
+        self,
+        tools: Sequence[McpDiscoveredTool] = (),
+    ) -> None:
+        self._tools = tuple(tools)
+
+    def __len__(self) -> int:
+        return len(self._tools)
+
+    @overload
+    def __getitem__(self, index: int) -> McpDiscoveredTool: ...
+
+    @overload
+    def __getitem__(
+        self,
+        index: slice,
+    ) -> tuple[McpDiscoveredTool, ...]: ...
+
+    def __getitem__(
+        self,
+        index: int | slice,
+    ) -> McpDiscoveredTool | tuple[McpDiscoveredTool, ...]:
+        return self._tools[index]
+
+    def get(
+        self,
+        name: str,
+    ) -> McpDiscoveredTool | None:
+        """Return one discovered tool by remote name."""
+        for tool in self._tools:
+            if tool.remote_name == name:
+                return tool
+
+        return None
+
+    def select(
+        self,
+        *names: str,
+    ) -> "McpToolCollection":
+        """Select named tools while preserving original discovery order."""
+        available = {tool.remote_name for tool in self._tools}
+
+        missing: list[str] = []
+        seen_missing: set[str] = set()
+
+        for name in names:
+            if name not in available and name not in seen_missing:
+                missing.append(name)
+                seen_missing.add(name)
+
+        if missing:
+            raise ValueError("Unknown MCP tools: " + ", ".join(missing))
+
+        requested = set(names)
+
+        return McpToolCollection(
+            [tool for tool in self._tools if tool.remote_name in requested]
+        )
+
+    def names(self) -> list[str]:
+        return [tool.remote_name for tool in self._tools]
+
+    def definitions(self) -> list[dict[str, Any]]:
+        return [deepcopy(tool.definition) for tool in self._tools]
+
+    def canonical_ids(self) -> list[str]:
+        return [tool.canonical_id for tool in self._tools]
 
 
 class McpClient(BaseAPIClient):
@@ -153,21 +269,52 @@ class McpClient(BaseAPIClient):
             )
             raise
 
-    def discover_tools(
+    @staticmethod
+    def _resolve_server_id(
+        server: str | validator.McpServerRegistrationRead,
+    ) -> str:
+        if isinstance(server, str):
+            server_id = server.strip()
+
+            if not server_id:
+                raise ValueError("MCP server id cannot be empty.")
+
+            return server_id
+
+        if isinstance(
+            server,
+            validator.McpServerRegistrationRead,
+        ):
+            return server.id
+
+        raise TypeError(
+            "server must be an MCP server id or " "McpServerRegistrationRead"
+        )
+
+    def discover_tools_page(
         self,
-        server_id: str,
+        server: str | validator.McpServerRegistrationRead,
         *,
         cursor: str | None = None,
-    ) -> dict[str, Any]:
-        """Discover one page of tools exposed by a registered MCP server."""
+    ) -> McpToolDiscoveryPage:
+        """Discover exactly one page of tools from a registered MCP server."""
+        server_id = self._resolve_server_id(server)
+
         try:
             path = f"/v1/mcp/servers/{server_id}/tools"
+
             if cursor is None:
                 response = self.client.get(path)
             else:
-                response = self.client.get(path, params={"cursor": cursor})
+                response = self.client.get(
+                    path,
+                    params={"cursor": cursor},
+                )
+
             response.raise_for_status()
-            return response.json()
+
+            return McpToolDiscoveryPage.model_validate(response.json())
+
         except httpx.HTTPStatusError as exc:
             logging_utility.error(
                 "HTTP %d while discovering MCP tools for server %s: %s",
@@ -182,6 +329,41 @@ class McpClient(BaseAPIClient):
                 server_id,
             )
             raise
+
+    def discover_tools(
+        self,
+        server: str | validator.McpServerRegistrationRead,
+    ) -> McpToolCollection:
+        """Discover all tools, transparently following MCP pagination."""
+        tools: list[McpDiscoveredTool] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+
+        for _ in range(_MAX_DISCOVERY_PAGES):
+            page = self.discover_tools_page(
+                server,
+                cursor=cursor,
+            )
+
+            tools.extend(page.tools)
+
+            next_cursor = page.next_cursor
+
+            if next_cursor is None:
+                return McpToolCollection(tools)
+
+            if next_cursor in seen_cursors:
+                raise RuntimeError(
+                    "MCP discovery returned a repeated pagination cursor."
+                )
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
+        raise RuntimeError(
+            "MCP discovery exceeded the maximum pagination limit "
+            f"({_MAX_DISCOVERY_PAGES} pages)."
+        )
 
     def list_assistant_tools(
         self,
@@ -209,6 +391,44 @@ class McpClient(BaseAPIClient):
                 assistant_id,
             )
             raise
+
+    def attach_tools(
+        self,
+        assistant_id: str,
+        *,
+        tools: Sequence[McpDiscoveredTool],
+    ) -> list[validator.AssistantMcpToolRead]:
+        """Attach discovered MCP tools without repeating server provenance."""
+        selected = list(tools)
+
+        if not selected:
+            raise ValueError("At least one discovered MCP tool is required.")
+
+        if not all(isinstance(tool, McpDiscoveredTool) for tool in selected):
+            raise TypeError("tools must contain McpDiscoveredTool instances.")
+
+        server_ids = {tool.server_id for tool in selected}
+
+        if len(server_ids) != 1:
+            raise ValueError("All attached MCP tools must belong to the same server.")
+
+        server_id = next(iter(server_ids))
+
+        remote_names: list[str] = []
+        seen_names: set[str] = set()
+
+        for tool in selected:
+            if tool.remote_name in seen_names:
+                continue
+
+            remote_names.append(tool.remote_name)
+            seen_names.add(tool.remote_name)
+
+        return self.attach_assistant_tools(
+            assistant_id,
+            server_id=server_id,
+            tools=remote_names,
+        )
 
     def attach_assistant_tools(
         self,
