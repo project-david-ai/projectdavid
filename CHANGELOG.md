@@ -1,3 +1,10 @@
+# [1.109.0](https://github.com/project-david-ai/projectdavid/compare/v1.108.0...v1.109.0) (2026-09-26)
+
+
+### Features
+
+* add MCP management SDK client ([e6024bb](https://github.com/project-david-ai/projectdavid/commit/e6024bbfd44e973db6fd6dec415edc5f93b4c51c))
+
 # [1.108.0](https://github.com/project-david-ai/projectdavid/compare/v1.107.0...v1.108.0) (2026-09-04)
 
 
