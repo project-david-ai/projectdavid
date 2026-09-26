@@ -13,6 +13,7 @@ from .clients.datasets_client import DatasetsClient
 from .clients.deployments_client import DeploymentsClient
 from .clients.files_client import FileClient
 from .clients.inference_client import InferenceClient
+from .clients.mcp_client import McpClient
 from .clients.messages_client import MessagesClient
 from .clients.models_client import ModelsClient
 from .clients.registry_client import RegistryClient
@@ -71,6 +72,7 @@ class Entity:
         self._assistants_client: Optional[AssistantsClient] = None
         self._thread_service: Optional[ThreadsClient] = None
         self._messages_client: Optional[MessagesClient] = None
+        self._mcp_client: Optional[McpClient] = None
 
         self._runs_client: Optional[RunsClient] = None
         self._actions_client: Optional[ActionsClient] = None
@@ -123,6 +125,15 @@ class Entity:
                 base_url=self.base_url, api_key=self.api_key
             )
         return self._messages_client
+
+    @property
+    def mcp(self) -> McpClient:
+        if self._mcp_client is None:
+            self._mcp_client = McpClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        return self._mcp_client
 
     def submit_function_call_output(self, thread, assistant_id, tool_id, content):
 
