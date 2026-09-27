@@ -17,6 +17,7 @@ validator = ValidationInterface()
 
 def _server_payload(server_id: str = "mcp_server_1", **overrides):
     payload = {
+        "auth_type": "none",
         "id": server_id,
         "owner_id": "user_1",
         "name": "github",

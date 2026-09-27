@@ -8,6 +8,7 @@ from typing import Any, Optional, overload
 
 import httpx
 from projectdavid_common import UtilsInterface, ValidationInterface
+from projectdavid_common.schemas.mcp_schemas import McpServerAuth
 from pydantic import BaseModel, ConfigDict
 
 from projectdavid.clients.base_client import BaseAPIClient
@@ -139,32 +140,93 @@ class McpClient(BaseAPIClient):
             self.base_url,
         )
 
+    @staticmethod
+    def _registration_create_payload(
+        request: validator.McpServerRegistrationCreate,
+    ) -> dict[str, Any]:
+        """
+        Serialize an MCP registration request at the outbound HTTP boundary.
+
+        Pydantic SecretStr values remain protected everywhere else. The raw
+        bearer token is unwrapped only here because Core must receive it once
+        in order to create the encrypted registration credential.
+        """
+        payload = request.model_dump(
+            mode="json",
+            exclude={"auth"},
+        )
+
+        auth_payload = request.auth.model_dump(
+            mode="json",
+            exclude={"token"},
+            exclude_none=True,
+        )
+
+        if request.auth.type != "none":
+            if request.auth.token is not None:
+                auth_payload["token"] = request.auth.token.get_secret_value()
+
+            payload["auth"] = auth_payload
+
+        return payload
+
     def create_server(
         self,
         *,
         name: str,
         url: str,
+        auth: McpServerAuth | None = None,
+        bearer_token: str | None = None,
         transport: str = "streamable_http",
         timeout_seconds: float = 30.0,
     ) -> validator.McpServerRegistrationRead:
-        """Register a user-owned remote MCP server."""
+        """
+        Register a user-owned remote MCP server.
+
+        Authentication is bound to the registration. Discovery, attachment,
+        and execution therefore do not require the credential again.
+        """
+        if auth is not None and bearer_token is not None:
+            raise ValueError("Provide either auth or bearer_token, not both.")
+
+        if bearer_token is not None:
+            auth = McpServerAuth(
+                type="bearer",
+                token=bearer_token,
+            )
+
+        if auth is None:
+            auth = McpServerAuth()
+
         try:
-            payload = validator.McpServerRegistrationCreate(
+            request = validator.McpServerRegistrationCreate(
                 name=name,
                 url=url,
+                auth=auth,
                 transport=transport,
                 timeout_seconds=timeout_seconds,
-            ).model_dump(mode="json")
-            response = self.client.post("/v1/mcp/servers", json=payload)
+            )
+
+            payload = self._registration_create_payload(request)
+
+            response = self.client.post(
+                "/v1/mcp/servers",
+                json=payload,
+            )
             response.raise_for_status()
+
             return validator.McpServerRegistrationRead.model_validate(response.json())
+
         except httpx.HTTPStatusError as exc:
+            # Do not log response bodies on the credential-bearing
+            # registration path. An upstream implementation could reflect
+            # request material in an error response.
             logging_utility.error(
-                "HTTP %d while creating MCP server: %s",
+                "HTTP %d while creating MCP server",
                 exc.response.status_code,
-                exc.response.text,
             )
             raise
+
         except Exception:
             logging_utility.exception("Unexpected error creating MCP server")
             raise
