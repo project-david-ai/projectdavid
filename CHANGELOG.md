@@ -1,3 +1,10 @@
+# [1.111.0](https://github.com/project-david-ai/projectdavid/compare/v1.110.0...v1.111.0) (2026-09-27)
+
+
+### Features
+
+* add authenticated MCP server registration ([53d0ba9](https://github.com/project-david-ai/projectdavid/commit/53d0ba933a608c0040307ddda249ab14279995c3))
+
 # [1.110.0](https://github.com/project-david-ai/projectdavid/compare/v1.109.0...v1.110.0) (2026-09-26)
 
 
