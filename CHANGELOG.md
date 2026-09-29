@@ -1,3 +1,10 @@
+# [1.112.0](https://github.com/project-david-ai/projectdavid/compare/v1.111.0...v1.112.0) (2026-09-29)
+
+
+### Features
+
+* **sdk:** add first-class scratchpads client ([11a09c4](https://github.com/project-david-ai/projectdavid/commit/11a09c44ab4ce8163e47bcade7d8480c838b8291))
+
 # [1.111.0](https://github.com/project-david-ai/projectdavid/compare/v1.110.0...v1.111.0) (2026-09-27)
 
 
