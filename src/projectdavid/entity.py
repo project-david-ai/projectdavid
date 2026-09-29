@@ -18,6 +18,7 @@ from .clients.messages_client import MessagesClient
 from .clients.models_client import ModelsClient
 from .clients.registry_client import RegistryClient
 from .clients.runs import RunsClient
+from .clients.scratchpads_client import ScratchpadsClient
 from .clients.synchronous_inference_wrapper import SynchronousInferenceStream
 from .clients.threads_client import ThreadsClient
 from .clients.tools import ToolsClient
@@ -75,6 +76,7 @@ class Entity:
         self._mcp_client: Optional[McpClient] = None
 
         self._runs_client: Optional[RunsClient] = None
+        self._scratchpads_client: Optional[ScratchpadsClient] = None
         self._actions_client: Optional[ActionsClient] = None
         self._tools_client: Optional[ToolsClient] = None
         self._computer_client: Optional[ComputerClient] = None
@@ -144,6 +146,16 @@ class Entity:
         if self._runs_client is None:
             self._runs_client = RunsClient(base_url=self.base_url, api_key=self.api_key)
         return self._runs_client
+
+    @property
+    def scratchpads(self) -> ScratchpadsClient:
+        if self._scratchpads_client is None:
+            self._scratchpads_client = ScratchpadsClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+
+        return self._scratchpads_client
 
     @property
     def actions(self) -> ActionsClient:
