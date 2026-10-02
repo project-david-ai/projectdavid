@@ -214,17 +214,15 @@ def test_post_not_retried_to_prevent_duplicate_vectors(client, monkeypatch):
 
 
 def test_embeddings_extra_is_declared():
-    import tomllib
+    pyproject_text = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    assert any(
-        d.startswith("sentence-transformers")
-        for d in data["project"]["optional-dependencies"]["embeddings"]
-    )
-    assert not any(
-        d.startswith(("sentence-transformers", "torch"))
-        for d in data["project"]["dependencies"]
-    )
+    assert "[project.optional-dependencies]" in pyproject_text
+    assert 'embeddings = ["sentence-transformers>=3.0,<6.0"]' in pyproject_text
+
+    dependencies_block = pyproject_text.split("[project.optional-dependencies]", 1)[0]
+
+    assert "sentence-transformers" not in dependencies_block
+    assert '"torch' not in dependencies_block
 
 
 def test_http_transport_uses_gateway_and_authentication(monkeypatch):
