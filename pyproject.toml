@@ -41,6 +41,11 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=3.0,<6.0"]
+# Compatibility with the extra already used by Core image requirements.
+text-embeddings = ["sentence-transformers>=3.0,<6.0"]
+
 [tool.setuptools.package-data]
 "projectdavid" = ["py.typed"]
 

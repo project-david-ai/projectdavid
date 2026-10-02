@@ -1,7 +1,7 @@
 """projectdavid.clients.vector_store_client
 ---------------------------------------
 
-Token-scoped HTTP client + local Qdrant helper for vector-store operations.
+Token-scoped HTTP client + optional local embedding compute for vector-store operations.
 """
 
 import asyncio
@@ -17,7 +17,6 @@ from projectdavid_common import UtilsInterface, ValidationInterface
 from pydantic import BaseModel, Field
 
 from projectdavid.clients.file_processor import FileProcessor
-from projectdavid.clients.vector_store_manager import VectorStoreManager
 
 load_dotenv()
 log = UtilsInterface.LoggingUtility()
@@ -52,7 +51,7 @@ class VectorStoreFileUpdateStatusInput(BaseModel):
 # --------------------------------------------------------------------------- #
 class VectorStoreClient:
     """
-    Thin HTTP+Qdrant wrapper.
+    HTTP vector-storage client with optional local embeddings.
 
     • All API requests scoped by X-API-Key.
     • create_vector_store() no longer takes user_id; ownership from token.
@@ -68,10 +67,12 @@ class VectorStoreClient:
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         *,
-        vector_store_host: str = "localhost",
+        vector_store_host: Optional[str] = None,
         file_processor_kwargs: Optional[dict] = None,
     ):
-        self.base_url = (base_url or os.getenv("BASE_URL", "")).rstrip("/")
+        self.base_url = (
+            base_url or os.getenv("PROJECTDAVID_BASE_URL") or os.getenv("BASE_URL", "")
+        ).rstrip("/")
         self.api_key = api_key or os.getenv("API_KEY")
         if not self.base_url:
             raise VectorStoreClientError("BASE_URL is required.")
@@ -87,11 +88,16 @@ class VectorStoreClient:
         )
 
         # Local helpers ---------------------------------------------------
-        self.vector_manager = VectorStoreManager(vector_store_host=vector_store_host)
+        if vector_store_host is not None:
+            warnings.warn(
+                "vector_store_host is deprecated and ignored; Qdrant topology is server-owned.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self.identifier_service = UtilsInterface.IdentifierService()
 
         # Using stripped-down version until we move forward with multi-modal stores
-        self.file_processor = FileProcessor()
+        self.file_processor = FileProcessor(**(file_processor_kwargs or {}))
 
         log.info("VectorStoreClient → %s", self.base_url)
 
@@ -140,7 +146,7 @@ class VectorStoreClient:
             raise VectorStoreClientError(f"Invalid response: {resp.text}") from exc
 
     async def _request(self, method: str, url: str, **kwargs) -> Any:
-        retries = 3
+        retries = 3 if method.upper() in {"GET", "DELETE"} else 1
         for attempt in range(1, retries + 1):
             try:
                 async with httpx.AsyncClient(
@@ -187,11 +193,6 @@ class VectorStoreClient:
         config: Optional[Dict[str, Any]],
     ) -> ValidationInterface.VectorStoreRead:
         shared_id = self.identifier_service.generate_vector_id()
-        self.vector_manager.create_store(
-            store_name=shared_id,
-            vector_size=vector_size,
-            distance=distance_metric.upper(),
-        )
         payload = {
             "shared_id": shared_id,
             "name": name,
@@ -211,11 +212,6 @@ class VectorStoreClient:
         config: Optional[Dict[str, Any]],
     ) -> ValidationInterface.VectorStoreRead:
         shared_id = self.identifier_service.generate_vector_id()
-        self.vector_manager.create_store(
-            store_name=shared_id,
-            vector_size=vector_size,
-            distance=distance_metric.upper(),
-        )
         payload = {
             "shared_id": shared_id,
             "name": name,
@@ -252,7 +248,11 @@ class VectorStoreClient:
         texts, vectors = processed["chunks"], processed["vectors"]
         line_data = processed.get("line_data") or []
 
-        base_md = (meta or {}) | {"source": str(p), "file_name": p.name}
+        base_md = (meta or {}) | {
+            "source": str(p),
+            "file_path": str(p),
+            "file_name": p.name,
+        }
         file_record_id = f"vsf_{uuid.uuid4()}"
 
         chunk_md = []
@@ -262,28 +262,23 @@ class VectorStoreClient:
                 payload.update(line_data[i])
             chunk_md.append(payload)
 
-        store = self.retrieve_vector_store_sync(vector_store_id)
-        collection_name = store.collection_name
-
-        self.vector_manager.add_to_store(
-            store_name=collection_name,
-            texts=texts,
-            vectors=vectors,
-            metadata=chunk_md,
-        )
-
         resp = await self._request(
             "POST",
-            f"/v1/vector-stores/{vector_store_id}/files",
+            f"/v1/vector-stores/{vector_store_id}/vectors",
             json={
-                "file_id": file_record_id,
-                "file_name": p.name,
-                "file_path": str(p),
-                "status": "completed",
-                "meta_data": meta or {},
+                "texts": texts,
+                "vectors": [v.tolist() if hasattr(v, "tolist") else v for v in vectors],
+                "metadata": chunk_md,
+                "file": {
+                    "file_id": file_record_id,
+                    "file_name": p.name,
+                    "file_path": str(p),
+                    "status": "completed",
+                    "meta_data": meta or {},
+                },
             },
         )
-        return ValidationInterface.VectorStoreFileRead.model_validate(resp)
+        return ValidationInterface.VectorStoreFileRead.model_validate(resp["file"])
 
     async def _search_vs_async(
         self,
@@ -293,11 +288,12 @@ class VectorStoreClient:
         filters: Optional[Dict] = None,
         vector_store_host: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        vector_manager = (
-            VectorStoreManager(vector_store_host=vector_store_host)
-            if vector_store_host
-            else self.vector_manager
-        )
+        if vector_store_host is not None:
+            warnings.warn(
+                "vector_store_host is deprecated and ignored; Qdrant topology is server-owned.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         store = self.retrieve_vector_store_sync(vector_store_id)
 
         if store.vector_size == 1024:
@@ -307,17 +303,18 @@ class VectorStoreClient:
             vec = self.file_processor.encode_text(query_text).tolist()
             vector_field = None
 
-        return vector_manager.query_store(
-            store_name=store.collection_name,
-            query_vector=vec,
-            top_k=top_k,
-            filters=filters,
-            vector_field=vector_field,
+        return await self._request(
+            "POST",
+            f"/v1/vector-stores/{vector_store_id}/search",
+            json={
+                "query_vector": vec,
+                "top_k": top_k,
+                "filters": filters,
+                "vector_field": vector_field,
+            },
         )
 
     async def _delete_vs_async(self, vector_store_id: str, permanent: bool):
-        store = self.retrieve_vector_store_sync(vector_store_id)
-        qres = self.vector_manager.delete_store(store.collection_name)
         await self._request(
             "DELETE",
             f"/v1/vector-stores/{vector_store_id}",
@@ -327,14 +324,10 @@ class VectorStoreClient:
             "vector_store_id": vector_store_id,
             "status": "deleted",
             "permanent": permanent,
-            "qdrant_result": qres,
+            "qdrant_result": None,
         }
 
     async def _delete_file_async(self, vector_store_id: str, file_path: str):
-        store = self.retrieve_vector_store_sync(vector_store_id)
-        fres = self.vector_manager.delete_file_from_store(
-            store.collection_name, file_path
-        )
         await self._request(
             "DELETE",
             f"/v1/vector-stores/{vector_store_id}/files",
@@ -344,7 +337,7 @@ class VectorStoreClient:
             "vector_store_id": vector_store_id,
             "file_path": file_path,
             "status": "deleted",
-            "qdrant_result": fres,
+            "qdrant_result": None,
         }
 
     async def _list_store_files_async(
@@ -401,7 +394,7 @@ class VectorStoreClient:
                     "text": h["text"],
                     "score": h["score"],
                     "meta_data": md,
-                    "vector_id": h.get("vector_id"),
+                    "vector_id": h.get("vector_id", h.get("id")),
                     "store_id": h.get("store_id"),
                 }
             )
