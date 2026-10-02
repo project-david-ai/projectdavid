@@ -245,3 +245,60 @@ def test_http_transport_uses_gateway_and_authentication(monkeypatch):
     assert requests[0].url == httpx.URL("http://localhost/v1/vector-stores")
     assert requests[0].headers["X-API-Key"] == "secret"
     client.close()
+
+
+def test_file_processor_encode_does_not_pass_unsupported_truncate_kwarg():
+    import asyncio
+
+    import numpy as np
+
+    from projectdavid.clients.file_processor import FileProcessor
+
+    class FakeEmbeddingModel:
+        def __init__(self):
+            self.calls = []
+
+        def encode(self, texts, **kwargs):
+            if "truncate" in kwargs:
+                raise AssertionError(
+                    "FileProcessor passed unsupported 'truncate' kwarg"
+                )
+
+            self.calls.append(
+                {
+                    "texts": texts,
+                    "kwargs": kwargs,
+                }
+            )
+
+            return np.array([[0.1, 0.2, 0.3]], dtype=np.float32)
+
+    processor = FileProcessor(max_workers=1)
+    model = FakeEmbeddingModel()
+    processor._embedding_model = model
+
+    try:
+        sync_vector = processor.encode_text("sync embedding probe")
+
+        async_vector = asyncio.run(
+            processor._encode_chunk_async("async embedding probe")
+        )
+
+        assert sync_vector.shape == (3,)
+        assert async_vector.shape == (3,)
+
+        assert len(model.calls) == 2
+
+        sync_call = model.calls[0]
+        async_call = model.calls[1]
+
+        assert sync_call["kwargs"]["convert_to_numpy"] is True
+        assert sync_call["kwargs"]["normalize_embeddings"] is True
+        assert "truncate" not in sync_call["kwargs"]
+
+        assert async_call["kwargs"]["convert_to_numpy"] is True
+        assert async_call["kwargs"]["normalize_embeddings"] is True
+        assert async_call["kwargs"]["show_progress_bar"] is False
+        assert "truncate" not in async_call["kwargs"]
+    finally:
+        processor._executor.shutdown(wait=True)
