@@ -1,3 +1,10 @@
+## [1.113.1](https://github.com/project-david-ai/projectdavid/compare/v1.113.0...v1.113.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **embeddings:** remove unsupported truncate argument ([fa113f2](https://github.com/project-david-ai/projectdavid/commit/fa113f2cf9de010bb76aafc6b5b0964ecd3d13b9))
+
 # [1.113.0](https://github.com/project-david-ai/projectdavid/compare/v1.112.0...v1.113.0) (2026-10-02)
 
 
