@@ -1,3 +1,10 @@
+# [1.113.0](https://github.com/project-david-ai/projectdavid/compare/v1.112.0...v1.113.0) (2026-10-02)
+
+
+### Features
+
+* **vector:** route vector storage through Project David API ([542f80c](https://github.com/project-david-ai/projectdavid/commit/542f80c359c6f47f1acf589a6f713c4678ae0e3b))
+
 # [1.112.0](https://github.com/project-david-ai/projectdavid/compare/v1.111.0...v1.112.0) (2026-09-29)
 
 
