@@ -54,8 +54,6 @@ class RunsClient(BaseAPIClient):
     ) -> Any:  # Returns ent_validator.Run
         meta_data = meta_data or {}
         tool_choice = tool_choice or "none"
-        model = model or "gpt-4"
-
         now = int(time.time())
 
         run_payload = ent_validator.RunCreate(
@@ -82,11 +80,9 @@ class RunsClient(BaseAPIClient):
             started_at=None,
             status=ent_validator.RunStatus.pending,
             tool_choice=tool_choice,
-            tools=[],
             usage=None,
             temperature=temperature,
             top_p=top_p,
-            tool_resources={},
             truncation_strategy=truncation_strategy,
         )
 
@@ -124,7 +120,7 @@ class RunsClient(BaseAPIClient):
 
     def update_run_status(self, run_id: str, new_status: str) -> Any:
         logging_utility.info(
-            "Updating run status for run_id: %s to %s", run_id, new_status
+            "Updating run status for run_id=%s to %s", run_id, new_status
         )
         update_data = {"status": new_status}
         try:
