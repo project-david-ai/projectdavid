@@ -1,3 +1,10 @@
+## [1.113.2](https://github.com/project-david-ai/projectdavid/compare/v1.113.1...v1.113.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* remove implicit run defaults to preserve assistant configuration inheritance ([cb8bdc0](https://github.com/project-david-ai/projectdavid/commit/cb8bdc05187d96a76ae8d8caafd5edaf40e22766))
+
 ## [1.113.1](https://github.com/project-david-ai/projectdavid/compare/v1.113.0...v1.113.1) (2026-10-02)
 
 
