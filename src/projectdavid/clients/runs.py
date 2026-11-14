@@ -2,16 +2,113 @@
 import json
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 import httpx
 import requests
 from projectdavid_common import UtilsInterface, ValidationInterface
 from projectdavid_common.validation import StatusEnum, TruncationStrategy
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sseclient import SSEClient
 
 from projectdavid.clients.base_client import BaseAPIClient
+
+# ---------------------------------------------------------------------------
+# Pydantic read projections of the owner-scoped execution ledger.
+#
+# The Core deliberately publishes only structured metadata. These models
+# mirror its response fields; they never retrieve the underlying evidence.
+# ---------------------------------------------------------------------------
+
+
+class _LedgerReadModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class ExecutionActorRead(_LedgerReadModel):
+    id: str
+    epoch_id: str
+    slot: str
+    execution_role: str
+    assistant_id_snapshot: Optional[str] = None
+    model_snapshot: Optional[str] = None
+    ephemeral: bool
+    state: str
+    reserved_at: int
+    activated_at: Optional[int] = None
+    retired_at: Optional[int] = None
+    last_seen_at: Optional[int] = None
+
+
+class ExecutionEpochRead(_LedgerReadModel):
+    id: str
+    run_id: str
+    root_run_id: str
+    epoch_number: int
+    state: str
+    created_at: int
+    started_at: Optional[int] = None
+    last_seen_at: Optional[int] = None
+    ended_at: Optional[int] = None
+    terminal_status: Optional[str] = None
+    actors: List[ExecutionActorRead] = Field(default_factory=list)
+
+
+class RunDelegationRead(_LedgerReadModel):
+    id: str
+    root_run_id: str
+    parent_epoch_id: str
+    parent_run_id: str
+    parent_action_id: str
+    child_epoch_id: str
+    child_run_id: str
+    initiating_actor_id: Optional[str] = None
+    created_at: int
+
+
+class ExecutionEventRead(_LedgerReadModel):
+    id: int
+    epoch_id: str
+    actor_id: Optional[str] = None
+    origin_run_id: str
+    event_type: str
+    schema_version: int
+    evidence_class: str
+    occurred_at_us: int
+    recorded_at_us: int
+    evidence_expires_at: Optional[int] = None
+    action_id_snapshot: Optional[str] = None
+    tool_call_id_snapshot: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+    evidence_ref: Optional[str] = None
+    evidence_sha256: Optional[str] = None
+    previous_digest: Optional[str] = None
+    record_digest: Optional[str] = None
+
+
+class ExecutionPage(_LedgerReadModel):
+    object: Literal["list"] = "list"
+    data: List[ExecutionEpochRead] = Field(default_factory=list)
+    has_more: bool
+    next_cursor: Optional[str] = None
+    root_run_id: str
+
+
+class DelegationPage(_LedgerReadModel):
+    object: Literal["list"] = "list"
+    data: List[RunDelegationRead] = Field(default_factory=list)
+    has_more: bool
+    next_cursor: Optional[str] = None
+    root_run_id: str
+
+
+class ExecutionEventPage(_LedgerReadModel):
+    object: Literal["list"] = "list"
+    data: List[ExecutionEventRead] = Field(default_factory=list)
+    has_more: bool
+    next_cursor: Optional[int] = None
+    root_run_id: str
+
 
 ent_validator = ValidationInterface()
 logging_utility = UtilsInterface.LoggingUtility()
@@ -51,7 +148,7 @@ class RunsClient(BaseAPIClient):
         temperature: float = 1.0,
         top_p: float = 1.0,
         truncation_strategy: Optional[TruncationStrategy] = None,
-    ) -> Any:  # Returns ent_validator.Run
+    ) -> Any:
         meta_data = meta_data or {}
         tool_choice = tool_choice or "none"
         now = int(time.time())
@@ -87,7 +184,9 @@ class RunsClient(BaseAPIClient):
         )
 
         logging_utility.info(
-            "Creating run for assistant_id=%s, thread_id=%s", assistant_id, thread_id
+            "Creating run for assistant_id=%s, thread_id=%s",
+            assistant_id,
+            thread_id,
         )
 
         try:
@@ -95,7 +194,10 @@ class RunsClient(BaseAPIClient):
             resp = self.client.post("/v1/runs", json=payload_dict)
             resp.raise_for_status()
             run_out = ent_validator.Run(**resp.json())
-            logging_utility.info("Run created successfully: %s", run_out.id)
+            logging_utility.info(
+                "Run created successfully: %s",
+                run_out.id,
+            )
             return run_out
         except ValidationError as e:
             logging_utility.error("Validation error: %s", e.json())
@@ -104,10 +206,13 @@ class RunsClient(BaseAPIClient):
             logging_utility.error("HTTP error during run creation")
             raise
         except Exception as e:
-            logging_utility.error("Unexpected error during run creation: %s", str(e))
+            logging_utility.error(
+                "Unexpected error during run creation: %s",
+                str(e),
+            )
             raise
 
-    def retrieve_run(self, run_id: str) -> Any:  # Returns RunReadDetailed
+    def retrieve_run(self, run_id: str) -> Any:
         logging_utility.info("Retrieving run with id: %s", run_id)
         try:
             response = self.client.get(f"/v1/runs/{run_id}")
@@ -118,15 +223,22 @@ class RunsClient(BaseAPIClient):
         except (ValidationError, httpx.HTTPStatusError, Exception):
             raise
 
-    def update_run_status(self, run_id: str, new_status: str) -> Any:
+    def update_run_status(
+        self,
+        run_id: str,
+        new_status: str,
+    ) -> Any:
         logging_utility.info(
-            "Updating run status for run_id=%s to %s", run_id, new_status
+            "Updating run status for run_id=%s to %s",
+            run_id,
+            new_status,
         )
         update_data = {"status": new_status}
         try:
             validated_data = ent_validator.RunStatusUpdate(**update_data)
             response = self.client.put(
-                f"/v1/runs/{run_id}/status", json=validated_data.dict()
+                f"/v1/runs/{run_id}/status",
+                json=validated_data.dict(),
             )
             response.raise_for_status()
             return ent_validator.Run(**response.json())
@@ -143,7 +255,11 @@ class RunsClient(BaseAPIClient):
             raise
 
     def generate(
-        self, run_id: str, model: str, prompt: str, stream: bool = False
+        self,
+        run_id: str,
+        model: str,
+        prompt: str,
+        stream: bool = False,
     ) -> Dict[str, Any]:
         try:
             run = self.retrieve_run(run_id)
@@ -210,11 +326,13 @@ class RunsClient(BaseAPIClient):
     ) -> bool:
         if timeout <= 0 or interval <= 0:
             raise ValueError("Timeout and interval must be positive numbers.")
+
         if not callable(tool_executor):
             raise TypeError("tool_executor must be a callable function.")
 
         start_time = time.time()
         action_handled_successfully = False
+
         logging_utility.info(f"[SDK Helper] Monitoring run {run_id} for actions...")
 
         terminal_run_states = {
@@ -223,6 +341,7 @@ class RunsClient(BaseAPIClient):
             StatusEnum.cancelled.value,
             StatusEnum.expired.value,
         }
+
         target_run_state = StatusEnum.pending_action.value
 
         while (time.time() - start_time) < timeout:
@@ -241,6 +360,7 @@ class RunsClient(BaseAPIClient):
 
                 if status_str == target_run_state:
                     pending_actions = actions_client.get_pending_actions(run_id=run_id)
+
                     if pending_actions:
                         action_to_handle = pending_actions[0]
 
@@ -254,20 +374,27 @@ class RunsClient(BaseAPIClient):
                 tool_call_id = action_to_handle.get("tool_call_id")
                 arguments = action_to_handle.get("function_arguments")
 
-                # Validate required fields before calling tool_executor
                 if not isinstance(tool_name, str):
                     logging_utility.error(
-                        "[SDK Helper] action missing valid tool_name: %r", tool_name
+                        "[SDK Helper] action missing valid tool_name: %r",
+                        tool_name,
                     )
                     break
+
                 if not isinstance(arguments, dict):
                     arguments = {}
 
                 try:
                     actions_client.update_action(
-                        action_id, status=StatusEnum.processing.value
+                        action_id,
+                        status=StatusEnum.processing.value,
                     )
-                    result_content = tool_executor(tool_name, arguments)
+
+                    result_content = tool_executor(
+                        tool_name,
+                        arguments,
+                    )
+
                     if not isinstance(result_content, str):
                         result_content = json.dumps(result_content)
 
@@ -279,10 +406,13 @@ class RunsClient(BaseAPIClient):
                         role="tool",
                         assistant_id=assistant_id,
                     )
+
                     action_handled_successfully = True
                     break
+
                 except Exception as tool_exc:
                     error_payload = json.dumps({"error": str(tool_exc)})
+
                     messages_client.submit_tool_output(
                         thread_id=thread_id,
                         tool_id=action_id,
@@ -292,6 +422,7 @@ class RunsClient(BaseAPIClient):
                         assistant_id=assistant_id,
                     )
                     break
+
             time.sleep(interval)
 
         return action_handled_successfully
@@ -310,8 +441,16 @@ class RunsClient(BaseAPIClient):
         tool_call_id: Optional[str] = None,
     ) -> bool:
         try:
-            actions_client.update_action(action_id, status="processing")
-            result_content = tool_executor(tool_name, streamed_args)
+            actions_client.update_action(
+                action_id,
+                status="processing",
+            )
+
+            result_content = tool_executor(
+                tool_name,
+                streamed_args,
+            )
+
             if not isinstance(result_content, str):
                 result_content = json.dumps(result_content)
 
@@ -323,10 +462,16 @@ class RunsClient(BaseAPIClient):
                 role="tool",
                 assistant_id=assistant_id,
             )
-            actions_client.update_action(action_id, status=StatusEnum.completed.value)
+
+            actions_client.update_action(
+                action_id,
+                status=StatusEnum.completed.value,
+            )
             return True
+
         except Exception as e:
             instructional_hint = f"Error for '{tool_name}': {str(e)}"
+
             messages_client.submit_tool_output(
                 thread_id=thread_id,
                 tool_id=action_id,
@@ -335,7 +480,11 @@ class RunsClient(BaseAPIClient):
                 role="tool",
                 assistant_id=assistant_id,
             )
-            actions_client.update_action(action_id, status=StatusEnum.failed.value)
+
+            actions_client.update_action(
+                action_id,
+                status=StatusEnum.failed.value,
+            )
             return True
 
     def execute_delegated_action(
@@ -351,8 +500,16 @@ class RunsClient(BaseAPIClient):
         tool_call_id: Optional[str] = None,
     ) -> bool:
         try:
-            actions_client.update_action(action_id, status="processing")
-            result_content = tool_executor(tool_name, args)
+            actions_client.update_action(
+                action_id,
+                status="processing",
+            )
+
+            result_content = tool_executor(
+                tool_name,
+                args,
+            )
+
             if not isinstance(result_content, str):
                 result_content = json.dumps(result_content)
 
@@ -364,8 +521,13 @@ class RunsClient(BaseAPIClient):
                 role="tool",
                 assistant_id=assistant_id,
             )
-            actions_client.update_action(action_id, status=StatusEnum.completed.value)
+
+            actions_client.update_action(
+                action_id,
+                status=StatusEnum.completed.value,
+            )
             return True
+
         except Exception as e:
             messages_client.submit_tool_output(
                 thread_id=thread_id,
@@ -375,7 +537,11 @@ class RunsClient(BaseAPIClient):
                 role="tool",
                 assistant_id=assistant_id,
             )
-            actions_client.update_action(action_id, status=StatusEnum.failed.value)
+
+            actions_client.update_action(
+                action_id,
+                status=StatusEnum.failed.value,
+            )
             return True
 
     def watch_run_events(
@@ -391,18 +557,28 @@ class RunsClient(BaseAPIClient):
         headers = self.client.headers
 
         def _listen_and_handle():
-            # BANDIT FIX: Timeout added here
-            resp = requests.get(url, headers=headers, stream=True, timeout=(10, 60))
+            resp = requests.get(
+                url,
+                headers=headers,
+                stream=True,
+                timeout=(10, 60),
+            )
+
             resp.raise_for_status()
             client = SSEClient(resp.iter_lines())
+
             for event in client.events():
                 if event.event == "action_required":
                     action = json.loads(event.data)
+
                     result = tool_executor(
-                        action.get("tool_name"), action.get("function_arguments", {})
+                        action.get("tool_name"),
+                        action.get("function_arguments", {}),
                     )
+
                     if not isinstance(result, str):
                         result = json.dumps(result)
+
                     messages_client.submit_tool_output(
                         thread_id=thread_id,
                         tool_id=action.get("action_id"),
@@ -412,40 +588,157 @@ class RunsClient(BaseAPIClient):
                     )
                     break
 
-        t = threading.Thread(target=_listen_and_handle, daemon=True)
+        t = threading.Thread(
+            target=_listen_and_handle,
+            daemon=True,
+        )
         t.start()
         t.join()
 
-    def list_runs(self, thread_id: str, limit: int = 20, order: str = "asc") -> Any:
+    def list_runs(
+        self,
+        thread_id: str,
+        limit: int = 20,
+        order: str = "asc",
+    ) -> Any:
         params: Dict[str, Union[str, int]] = {
             "limit": limit,
             "order": order if order in ("asc", "desc") else "asc",
         }
-        resp = self.client.get(f"/v1/threads/{thread_id}/runs", params=params)
+
+        resp = self.client.get(
+            f"/v1/threads/{thread_id}/runs",
+            params=params,
+        )
         resp.raise_for_status()
         payload = resp.json()
+
         if isinstance(payload, dict) and "data" in payload:
             return ent_validator.RunListResponse(**payload)
-        runs = [ent_validator.Run(**item) for item in payload]
-        return ent_validator.RunListResponse(object="list", data=runs, has_more=False)
 
-    def list_all_runs(self, limit: int = 20, order: str = "asc") -> Any:
+        runs = [ent_validator.Run(**item) for item in payload]
+
+        return ent_validator.RunListResponse(
+            object="list",
+            data=runs,
+            has_more=False,
+        )
+
+    def list_all_runs(
+        self,
+        limit: int = 20,
+        order: str = "asc",
+    ) -> Any:
         params: Dict[str, Union[str, int]] = {
             "limit": limit,
             "order": order if order in ("asc", "desc") else "asc",
         }
-        resp = self.client.get("/v1/runs", params=params)
+
+        resp = self.client.get(
+            "/v1/runs",
+            params=params,
+        )
         resp.raise_for_status()
         payload = resp.json()
+
         if isinstance(payload, dict) and "data" in payload:
             return ent_validator.RunListResponse(**payload)
-        runs = [ent_validator.Run(**item) for item in payload]
-        return ent_validator.RunListResponse(object="list", data=runs, has_more=False)
 
-    def update_run_fields(self, run_id: str, **kwargs) -> Any:
-        logging_utility.info("Patching run %s fields: %s", run_id, list(kwargs.keys()))
+        runs = [ent_validator.Run(**item) for item in payload]
+
+        return ent_validator.RunListResponse(
+            object="list",
+            data=runs,
+            has_more=False,
+        )
+
+    # ================================================================
+    # DURABLE EXECUTION LEDGER — OWNER-SCOPED READS
+    # ================================================================
+
+    def get_execution(
+        self,
+        run_id: str,
+        limit: int = 50,
+        after: Optional[str] = None,
+    ) -> ExecutionPage:
+        """Return typed execution epochs and their actor snapshots.
+
+        Use page.next_cursor as `after` to fetch the next page.
+        """
+        params: Dict[str, Union[str, int]] = {"limit": limit}
+
+        if after is not None:
+            params["after"] = after
+
+        response = self.client.get(
+            f"/v1/runs/{run_id}/execution",
+            params=params,
+        )
+        response.raise_for_status()
+        return ExecutionPage.model_validate(response.json())
+
+    def list_delegations(
+        self,
+        run_id: str,
+        limit: int = 50,
+        after: Optional[str] = None,
+    ) -> DelegationPage:
+        """Return typed parent Action -> child Run delegation links."""
+        params: Dict[str, Union[str, int]] = {"limit": limit}
+
+        if after is not None:
+            params["after"] = after
+
+        response = self.client.get(
+            f"/v1/runs/{run_id}/delegations",
+            params=params,
+        )
+        response.raise_for_status()
+        return DelegationPage.model_validate(response.json())
+
+    def list_execution_events(
+        self,
+        run_id: str,
+        limit: int = 50,
+        after: Optional[int] = None,
+    ) -> ExecutionEventPage:
+        """Return typed forensic event metadata for an owned root Run.
+
+        Evidence references are intentionally redacted by Core.
+        """
+        params: Dict[str, Union[str, int]] = {"limit": limit}
+
+        if after is not None:
+            params["after"] = after
+
+        response = self.client.get(
+            f"/v1/runs/{run_id}/execution-events",
+            params=params,
+        )
+        response.raise_for_status()
+        return ExecutionEventPage.model_validate(response.json())
+
+    # ================================================================
+    # EXISTING FIELD UPDATE METHOD
+    # ================================================================
+
+    def update_run_fields(
+        self,
+        run_id: str,
+        **kwargs,
+    ) -> Any:
+        logging_utility.info(
+            "Patching run %s fields: %s",
+            run_id,
+            list(kwargs.keys()),
+        )
+
         try:
-            resp = self.client.patch(f"/v1/runs/{run_id}/fields", json=kwargs)
+            resp = self.client.patch(
+                f"/v1/runs/{run_id}/fields",
+                json=kwargs,
+            )
             resp.raise_for_status()
             return ent_validator.Run(**resp.json())
         except Exception:
