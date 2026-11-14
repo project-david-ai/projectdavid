@@ -1,3 +1,10 @@
+# [1.114.0](https://github.com/project-david-ai/projectdavid/compare/v1.113.2...v1.114.0) (2026-11-14)
+
+
+### Features
+
+* add typed execution ledger SDK responses ([8df7b01](https://github.com/project-david-ai/projectdavid/commit/8df7b01fbc206a74b369a60ceda7809334ff2287))
+
 ## [1.113.2](https://github.com/project-david-ai/projectdavid/compare/v1.113.1...v1.113.2) (2026-11-12)
 
 
