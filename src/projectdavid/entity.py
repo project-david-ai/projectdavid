@@ -16,6 +16,7 @@ from .clients.inference_client import InferenceClient
 from .clients.mcp_client import McpClient
 from .clients.messages_client import MessagesClient
 from .clients.models_client import ModelsClient
+from .clients.provider_keys_client import ProviderKeysClient
 from .clients.registry_client import RegistryClient
 from .clients.runs import RunsClient
 from .clients.scratchpads_client import ScratchpadsClient
@@ -74,6 +75,7 @@ class Entity:
         self._thread_service: Optional[ThreadsClient] = None
         self._messages_client: Optional[MessagesClient] = None
         self._mcp_client: Optional[McpClient] = None
+        self._provider_keys_client: Optional[ProviderKeysClient] = None
 
         self._runs_client: Optional[RunsClient] = None
         self._scratchpads_client: Optional[ScratchpadsClient] = None
@@ -134,6 +136,15 @@ class Entity:
                 api_key=self.api_key,
             )
         return self._mcp_client
+
+    @property
+    def provider_keys(self) -> ProviderKeysClient:
+        if self._provider_keys_client is None:
+            self._provider_keys_client = ProviderKeysClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        return self._provider_keys_client
 
     def submit_function_call_output(self, thread, assistant_id, tool_id, content):
 
