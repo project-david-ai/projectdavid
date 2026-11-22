@@ -91,8 +91,6 @@ class Entity:
         self._models_client: Optional[ModelsClient] = None
         self._deployments_client: Optional[DeploymentsClient] = None
 
-        self._synchronous_inference_stream: Optional[SynchronousInferenceStream] = None
-
         # Utils
         self._run_monitor: Optional[HttpRunMonitor] = None
 
@@ -192,25 +190,18 @@ class Entity:
     @property
     def synchronous_inference_stream(self) -> SynchronousInferenceStream:
         """
-        Provides the synchronous stream wrapper.
+        Provides a fresh synchronous stream wrapper for each request.
+        Keep the returned wrapper in a local variable for setup and streaming.
         Automatically binds the Runs, Actions, and Messages clients so that
         StreamEvents (like ToolCallRequestEvent) are executable.
         """
-        if self._synchronous_inference_stream is None:
-            # 1. Initialize the wrapper
-            self._synchronous_inference_stream = SynchronousInferenceStream(
-                self.inference
-            )
-
-            # 2. Bind the clients required for smart events
-            # Accessing self.runs, self.actions, etc., triggers their lazy initialization if needed.
-            self._synchronous_inference_stream.bind_clients(
-                runs_client=self.runs,
-                actions_client=self.actions,
-                messages_client=self.messages,
-                assistants_client=self.assistants,
-            )
-        return self._synchronous_inference_stream
+        return SynchronousInferenceStream.for_request(
+            inference=self.inference,
+            runs_client=self.runs,
+            actions_client=self.actions,
+            messages_client=self.messages,
+            assistants_client=self.assistants,
+        )
 
     @property
     def files(self) -> FileClient:
