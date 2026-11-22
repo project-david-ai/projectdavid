@@ -206,6 +206,7 @@ class SynchronousInferenceStream:
         max_turns: int = 10,
     ) -> Generator[Union[StreamEvent, Any], None, None]:
 
+        schemas_unavailable = False
         if self.assistant_id and self.assistants_client:
             try:
                 ast = self.assistants_client.retrieve_assistant(self.assistant_id)
@@ -216,6 +217,7 @@ class SynchronousInferenceStream:
                 )
                 self.validator.build_registry_from_assistant(tools)
             except Exception as e:
+                schemas_unavailable = True
                 LOG.warning(
                     f"[SyncStream] Failed to retrieve Assistant tool schemas: {e}"
                 )
@@ -237,6 +239,11 @@ class SynchronousInferenceStream:
                     continue
 
                 if isinstance(event, ToolCallRequestEvent):
+                    if schemas_unavailable:
+                        raise ValueError(
+                            "Cannot validate tool call: Assistant tool schemas "
+                            "could not be retrieved."
+                        )
                     error_msg = self.validator.validate_args(
                         event.tool_name, event.args
                     )

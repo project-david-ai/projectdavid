@@ -110,6 +110,22 @@ class AssistantsClient(BaseAPIClient):
     # ------------------------------------------------------------------ #
     #  CRUD
     # ------------------------------------------------------------------ #
+    def bootstrap_playground_assistant(
+        self, *, model: str
+    ) -> ent_validator.AssistantRead:
+        """Return Core's protected Playground Assistant for the authenticated owner.
+
+        Requires a protected service credential. Core owns identity and idempotency;
+        authorization failures propagate without falling back to ordinary creation.
+        """
+        request = ent_validator.PlaygroundBootstrapRequest(model=model)
+        response = self._request_with_retries(
+            "POST",
+            "/v1/assistants/playground/bootstrap",
+            json=request.model_dump(),
+        )
+        return ent_validator.AssistantRead(**self._parse_response(response))
+
     def create_assistant(
         self,
         *,

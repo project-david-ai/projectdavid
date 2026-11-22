@@ -1,13 +1,14 @@
 import asyncio
 import json
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 import httpx
 from dotenv import load_dotenv
 from projectdavid_common import UtilsInterface, ValidationInterface
 from projectdavid_common.validation import StreamRequest
 from pydantic import ValidationError
+from pydantic_core import InitErrorDetails
 
 from projectdavid.clients.base_client import BaseAPIClient
 
@@ -57,6 +58,8 @@ class InferenceClient(BaseAPIClient):
         # stream_inference_response handles the non-streaming path transparently:
         # it yields the assembled content as a single chunk so this loop still works.
         async for chunk in self.stream_inference_response(**kwargs, stream=False):
+            if chunk.get("type") == "error":
+                raise ValueError("Inference failed; server returned an error chunk.")
             final_text += chunk.get("content", "")
 
         return {
@@ -189,9 +192,17 @@ class InferenceClient(BaseAPIClient):
 
         try:
             StreamRequest(**payload)
-        except ValidationError as e:
-            logging_utility.error("Payload validation error: %s", e.json())
-            raise
+        except ValidationError as exc:
+            # Pydantic errors can include the provider credential as input data.
+            errors = [
+                {**error, "input": "<redacted>"}
+                for error in exc.errors(include_url=False)
+            ]
+            raise ValidationError.from_exception_data(
+                exc.title,
+                cast(List[InitErrorDetails], errors),
+                hide_input=True,
+            ) from None
 
         headers = {"X-API-Key": self.api_key} if self.api_key else {}
 
@@ -208,6 +219,9 @@ class InferenceClient(BaseAPIClient):
                     response = await client.post("/v1/completions", json=payload)
                     response.raise_for_status()
                     data = response.json()
+                    if data.get("type") == "error":
+                        yield data
+                        return
                     # Server returns {run_id, content, type, model, elapsed_s}
                     # Normalise to the same shape as a content chunk so
                     # callers don't need to branch.
