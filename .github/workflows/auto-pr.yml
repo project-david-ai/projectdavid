@@ -36,11 +36,38 @@ jobs:
                 run.head_branch !== 'dev' ||
                 run.head_repository?.full_name !== `${repo.owner}/${repo.repo}`) return;
             const {data: ref} = await github.rest.git.getRef({...repo, ref: 'heads/dev'});
-            if (ref.object.sha !== run.head_sha) return;
+            const approvedHead = ref.object.sha;
+            if (approvedHead !== run.head_sha) {
+              // semantic-release makes exactly one [skip ci] commit after CI succeeds.
+              // Accept that child only if it contains trusted release metadata.
+              const {data: release} = await github.rest.repos.getCommit({
+                ...repo, ref: approvedHead
+              });
+              const versionMatch = /^chore\(release\): (\d+\.\d+\.\d+(?:-[\w.-]+)?) \[skip ci\](?:\r?\n|$)/
+                .exec(release.commit?.message || '');
+              const files = release.files || [];
+              const versionFile = files.find(file => file.filename === 'pyproject.toml');
+              const changelog = files.find(file => file.filename === 'CHANGELOG.md');
+              const versionLines = (versionFile?.patch || '').split(/\r?\n/)
+                .filter(line => /^[+-](?![+-])/.test(line));
+              if (release.parents?.length !== 1 ||
+                  release.parents[0].sha !== run.head_sha ||
+                  release.author?.login !== 'semantic-release-bot' ||
+                  !versionMatch || files.length !== 2 ||
+                  versionFile?.status !== 'modified' ||
+                  changelog?.status !== 'modified' ||
+                  versionLines.length !== 2 ||
+                  !/^-version = "[^"]+"$/.test(versionLines[0]) ||
+                  versionLines[1] !== `+version = "${versionMatch[1]}"` ||
+                  !changelog.patch ||
+                  changelog.patch.split(/\r?\n/).some(line => /^-(?!--)/.test(line))) return;
+            }
             const {data: comparison} = await github.rest.repos.compareCommitsWithBasehead({
-              ...repo, basehead: `main...${run.head_sha}`
+              ...repo, basehead: `main...${approvedHead}`
             });
-            core.setOutput('needed', comparison.ahead_by > 0 ? 'true' : 'false');
+            if (comparison.ahead_by === 0) return;
+            core.setOutput('approved_head', approvedHead);
+            core.setOutput('needed', 'true');
 
       - name: Obtain narrowly scoped GitHub App token
         id: app-token
@@ -55,12 +82,15 @@ jobs:
       - name: Open PR once or reuse the existing PR
         if: steps.check.outputs.needed == 'true'
         uses: actions/github-script@v7
+        env:
+          APPROVED_HEAD: ${{ steps.check.outputs.approved_head }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
             const repo = context.repo;
             const run = context.payload.workflow_run;
-            if (run.conclusion !== 'success' || run.event !== 'push' ||
+            const approvedHead = process.env.APPROVED_HEAD;
+            if (!approvedHead || run.conclusion !== 'success' || run.event !== 'push' ||
                 run.head_branch !== 'dev' ||
                 run.head_repository?.full_name !== `${repo.owner}/${repo.repo}`) return;
             const list = () => github.rest.pulls.list({
@@ -72,12 +102,12 @@ jobs:
               return;
             }
             const {data: comparison} = await github.rest.repos.compareCommitsWithBasehead({
-              ...repo, basehead: `main...${run.head_sha}`
+              ...repo, basehead: `main...${approvedHead}`
             });
             if (comparison.ahead_by === 0) return;
-            // Recheck after token creation and API reads, immediately before mutation.
+            // No unvalidated push may overtake CI while the App token is created.
             const {data: ref} = await github.rest.git.getRef({...repo, ref: 'heads/dev'});
-            if (ref.object.sha !== run.head_sha) return;
+            if (ref.object.sha !== approvedHead) return;
             try {
               const {data: pr} = await github.rest.pulls.create({
                 ...repo, title: 'Promote dev to main', head: 'dev', base: 'main',

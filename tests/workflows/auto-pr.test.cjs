@@ -12,7 +12,10 @@ async function execute({conclusion = 'success', event = 'push', branch = 'dev',
                         repository = 'project-david-ai/projectdavid', sha = 'tested',
                         current = 'tested', finalHead = current, ahead = 1,
                         finalAhead = ahead, existing = false, race = false,
-                        createError = null} = {}) {
+                        createError = null, releaseParent = sha,
+                        releaseAuthor = 'semantic-release-bot',
+                        releaseMessage = 'chore(release): 1.115.0-dev.2 [skip ci]',
+                        releaseFiles = null, releaseParents = null} = {}) {
   const calls = [], outputs = {};
   let phase = 0, listCalls = 0;
   const context = {repo: {owner: 'project-david-ai', repo: 'projectdavid'},
@@ -23,10 +26,25 @@ async function execute({conclusion = 'success', event = 'push', branch = 'dev',
       assert.equal(args.ref, 'heads/dev');
       return {data: {object: {sha: phase ? finalHead : current}}};
     }},
-    repos: {compareCommitsWithBasehead: async args => {
-      assert.equal(args.basehead, `main...${sha}`);
-      return {data: {ahead_by: phase ? finalAhead : ahead}};
-    }},
+    repos: {
+      getCommit: async args => {
+        assert.equal(args.ref, current);
+        return {data: {
+          parents: releaseParents || [{sha: current === 'released' ? releaseParent : 'untested'}],
+          author: {login: releaseAuthor},
+          commit: {message: releaseMessage},
+          files: releaseFiles || [
+            {filename: 'CHANGELOG.md', status: 'modified', patch: '@@ -1,2 +1,3 @@\n+new release'},
+            {filename: 'pyproject.toml', status: 'modified',
+              patch: '@@ -5,7 +5,7 @@\n-version = "1.115.0-dev.1"\n+version = "1.115.0-dev.2"'}
+          ]
+        }};
+      },
+      compareCommitsWithBasehead: async args => {
+        assert.equal(args.basehead, `main...${phase ? outputs.approved_head : current}`);
+        return {data: {ahead_by: phase ? finalAhead : ahead}};
+      }
+    },
     pulls: {
       list: async args => {
         assert.equal(args.base, 'main');
@@ -44,7 +62,9 @@ async function execute({conclusion = 'success', event = 'push', branch = 'dev',
   await new AsyncFunction('github', 'context', 'core', scripts[0])(github, context, core);
   if (outputs.needed === 'true') {
     phase = 1;
-    await new AsyncFunction('github', 'context', 'core', scripts[1])(github, context, core);
+    const process = {env: {APPROVED_HEAD: outputs.approved_head}};
+    await new AsyncFunction('github', 'context', 'core', 'process', scripts[1])(
+      github, context, core, process);
   }
   return calls;
 }
@@ -68,6 +88,9 @@ test('current successful dev push creates one PR', async () => {
   assert.equal(calls[0].base, 'main');
   assert.equal(calls[0].head, 'dev');
 });
+test('semantic-release child of tested SHA creates a PR', async () => {
+  assert.equal((await execute({current: 'released'})).length, 1);
+});
 for (const [name, options] of Object.entries({
   'existing PR': {existing: true},
   'failed CI': {conclusion: 'failure'},
@@ -77,7 +100,27 @@ for (const [name, options] of Object.entries({
   'unrelated branch': {branch: 'feature'},
   'fork': {repository: 'attacker/projectdavid'},
   'stale CI': {current: 'newer'},
+  'incorrect release parent': {current: 'released', releaseParent: 'other'},
+  'release merge commit': {current: 'released', releaseParents: [{sha: 'tested'}, {sha: 'other'}]},
+  'untrusted release author': {current: 'released', releaseAuthor: 'attacker'},
+  'untrusted release message': {current: 'released', releaseMessage: 'feat(sdk): malicious'},
+  'extra release file': {current: 'released', releaseFiles: [
+    {filename: 'CHANGELOG.md', status: 'modified', patch: '+new'},
+    {filename: 'pyproject.toml', status: 'modified', patch: '-version = "1.0"\n+version = "1.115.0-dev.2"'},
+    {filename: 'src/projectdavid/entity.py', status: 'modified', patch: '+new'}
+  ]},
+  'release changes dependencies': {current: 'released', releaseFiles: [
+    {filename: 'CHANGELOG.md', status: 'modified', patch: '+new'},
+    {filename: 'pyproject.toml', status: 'modified',
+      patch: '-version = "1.0"\n+version = "1.115.0-dev.2"\n+dependency = "evil"'}
+  ]},
+  'release deletes changelog content': {current: 'released', releaseFiles: [
+    {filename: 'CHANGELOG.md', status: 'modified', patch: '-old content\n+new'},
+    {filename: 'pyproject.toml', status: 'modified',
+      patch: '-version = "1.0"\n+version = "1.115.0-dev.2"'}
+  ]},
   'push during token creation': {finalHead: 'newer'},
+  'release superseded during token creation': {current: 'released', finalHead: 'newer'},
   'no changes': {ahead: 0},
   'changes already promoted': {finalAhead: 0},
 })) test(`${name} creates no PR`, async () => assert.equal((await execute(options)).length, 0));
