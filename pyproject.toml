@@ -1,10 +1,11 @@
+#!
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "projectdavid"
-version = "1.97.0-dev.1"
+version = "1.114.0"
 description = "Python SDK for interacting with the Project David Platform Assistant API."
 readme = "README.md"
 authors = [
@@ -19,7 +20,7 @@ dependencies = [
     "pydantic>=2.0,<3.0",
     "python-dotenv>=1.0.1,<2.0",
     "aiofiles>=23.2.1,<25.0",
-    "projectdavid_common>=0.64.1",
+    "projectdavid_common>=0.77.0",
     "qdrant-client>=1.0.0,<2.0.0",
     "pdfplumber>=0.11.0,<0.12.0",
     "validators>=0.29.0,<0.35.0",
@@ -39,6 +40,11 @@ classifiers = [
     "License :: Other/Proprietary License",
     "Operating System :: OS Independent"
 ]
+
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=3.0,<6.0"]
+# Compatibility with the extra already used by Core image requirements.
+text-embeddings = ["sentence-transformers>=3.0,<6.0"]
 
 [tool.setuptools.package-data]
 "projectdavid" = ["py.typed"]

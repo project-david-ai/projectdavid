@@ -167,3 +167,6 @@ docker-compose.runtime.yml
 #.idea/
 .idea/
 .venv/
+
+.env
+/working_scratch/

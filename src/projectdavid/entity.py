@@ -13,10 +13,12 @@ from .clients.datasets_client import DatasetsClient
 from .clients.deployments_client import DeploymentsClient
 from .clients.files_client import FileClient
 from .clients.inference_client import InferenceClient
+from .clients.mcp_client import McpClient
 from .clients.messages_client import MessagesClient
 from .clients.models_client import ModelsClient
 from .clients.registry_client import RegistryClient
 from .clients.runs import RunsClient
+from .clients.scratchpads_client import ScratchpadsClient
 from .clients.synchronous_inference_wrapper import SynchronousInferenceStream
 from .clients.threads_client import ThreadsClient
 from .clients.tools import ToolsClient
@@ -71,8 +73,10 @@ class Entity:
         self._assistants_client: Optional[AssistantsClient] = None
         self._thread_service: Optional[ThreadsClient] = None
         self._messages_client: Optional[MessagesClient] = None
+        self._mcp_client: Optional[McpClient] = None
 
         self._runs_client: Optional[RunsClient] = None
+        self._scratchpads_client: Optional[ScratchpadsClient] = None
         self._actions_client: Optional[ActionsClient] = None
         self._tools_client: Optional[ToolsClient] = None
         self._computer_client: Optional[ComputerClient] = None
@@ -124,6 +128,15 @@ class Entity:
             )
         return self._messages_client
 
+    @property
+    def mcp(self) -> McpClient:
+        if self._mcp_client is None:
+            self._mcp_client = McpClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        return self._mcp_client
+
     def submit_function_call_output(self, thread, assistant_id, tool_id, content):
 
         self._messages_client.submit_tool_output(thread, assistant_id, tool_id, content)
@@ -133,6 +146,16 @@ class Entity:
         if self._runs_client is None:
             self._runs_client = RunsClient(base_url=self.base_url, api_key=self.api_key)
         return self._runs_client
+
+    @property
+    def scratchpads(self) -> ScratchpadsClient:
+        if self._scratchpads_client is None:
+            self._scratchpads_client = ScratchpadsClient(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+
+        return self._scratchpads_client
 
     @property
     def actions(self) -> ActionsClient:

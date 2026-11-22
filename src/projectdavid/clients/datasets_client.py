@@ -98,13 +98,58 @@ class DatasetsClient(BaseAPIClient):
         return validator.DatasetRead.model_validate(response.json())
 
     # ------------------------------------------------------------------
+    # WAIT UNTIL READY
+    # ------------------------------------------------------------------
+    def wait_until_ready(
+        self,
+        dataset_id: str,
+        *,
+        timeout: float = 300.0,
+        poll_interval: float = 3.0,
+    ) -> validator.DatasetRead:
+        """
+        Block until the dataset reaches 'active' status.
+
+        Polls the dataset every `poll_interval` seconds. Returns the final
+        DatasetRead once active. Raises RuntimeError if the dataset enters
+        the 'failed' status, TimeoutError if it has not reached a terminal
+        state within `timeout` seconds.
+        """
+        import time  # local import keeps top-of-file imports minimal
+
+        deadline = time.monotonic() + timeout
+        last_status = None
+
+        while time.monotonic() < deadline:
+            ds = self.retrieve(dataset_id)
+            if ds.status != last_status:
+                logging_utility.info("Dataset %s status=%s", dataset_id, ds.status)
+                last_status = ds.status
+
+            if ds.status == "active":
+                return ds
+            if ds.status == "failed":
+                raise RuntimeError(
+                    f"Dataset {dataset_id} preparation failed (status=failed)"
+                )
+            time.sleep(poll_interval)
+
+        raise TimeoutError(
+            f"Dataset {dataset_id} did not reach 'active' within {timeout}s "
+            f"(last status={last_status})"
+        )
+
+    # ------------------------------------------------------------------
     # LIST
     # ------------------------------------------------------------------
 
     def list(
-        self, status: Optional[str] = None, limit: int = 50
+        self,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> validator.DatasetList:
-        params: Dict[str, Union[str, int]] = {"limit": limit}
+        params: Dict[str, Union[str, int]] = {"limit": limit, "offset": offset}
         if status:
             params["status"] = status
 
@@ -116,7 +161,27 @@ class DatasetsClient(BaseAPIClient):
     # DELETE
     # ------------------------------------------------------------------
 
-    def delete(self, dataset_id: str) -> validator.DatasetDeleted:
-        response = self.client.delete(self._get_url(f"/v1/datasets/{dataset_id}"))
+    def delete(
+        self,
+        dataset_id: str,
+        hard: bool = False,
+    ) -> validator.DatasetDeleted:
+        """
+        Delete a dataset. Default is soft-delete (reversible — record
+        marked deleted but DB rows preserved).
+
+        Set hard=True to permanently remove the Dataset row and mark
+        the backing File row for filesystem purge by the cleanup daemon.
+        Hard-delete is irreversible.
+
+        Both modes raise httpx.HTTPStatusError(409) if the dataset is
+        currently being prepared, or if it is referenced by any active
+        training job (queued, in_progress, cancelling).
+        """
+        params = {"hard": "true"} if hard else {}
+        response = self.client.delete(
+            self._get_url(f"/v1/datasets/{dataset_id}"),
+            params=params,
+        )
         response.raise_for_status()
         return validator.DatasetDeleted.model_validate(response.json())

@@ -106,7 +106,6 @@ class FileProcessor:
         return model.encode(
             [text],
             convert_to_numpy=True,
-            truncate="model_max_length",
             normalize_embeddings=True,
         )[0]
 
@@ -117,7 +116,6 @@ class FileProcessor:
             lambda: model.encode(
                 [chunk],
                 convert_to_numpy=True,
-                truncate="model_max_length",
                 normalize_embeddings=True,
                 show_progress_bar=False,
             )[0],
