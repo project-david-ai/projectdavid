@@ -1,3 +1,10 @@
+# [1.115.0-dev.2](https://github.com/project-david-ai/projectdavid/compare/v1.115.0-dev.1...v1.115.0-dev.2) (2026-11-22)
+
+
+### Features
+
+* **sdk:** add typed BYOK provider key management client ([9242612](https://github.com/project-david-ai/projectdavid/commit/924261257b7e959450fbce3d352c1e9f887b99d5))
+
 # [1.115.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.114.0...v1.115.0-dev.1) (2026-11-22)
 
 
