@@ -1,3 +1,10 @@
+# [1.115.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.114.0...v1.115.0-dev.1) (2026-11-22)
+
+
+### Features
+
+* **sdk:** reconcile Core contracts and add automated promotion PR ([1ea62ba](https://github.com/project-david-ai/projectdavid/commit/1ea62baa1f24aab28eecf28894be163ecef07e57))
+
 # [1.114.0](https://github.com/project-david-ai/projectdavid/compare/v1.113.2...v1.114.0) (2026-11-14)
 
 
