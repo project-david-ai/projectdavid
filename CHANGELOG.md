@@ -1,3 +1,10 @@
+# [1.115.0-dev.3](https://github.com/project-david-ai/projectdavid/compare/v1.115.0-dev.2...v1.115.0-dev.3) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ci:** recognize verified semantic-release commits in auto-PR ([386ea02](https://github.com/project-david-ai/projectdavid/commit/386ea0220c88f9a2a8f4c494668bf6b5a4532d9c))
+
 # [1.115.0-dev.2](https://github.com/project-david-ai/projectdavid/compare/v1.115.0-dev.1...v1.115.0-dev.2) (2026-11-22)
 
 
