@@ -151,6 +151,7 @@ class InferenceClient(BaseAPIClient):
         meta_data: Optional[Dict[str, Any]] = None,
         timeout: float = 600.0,
         stream: bool = True,
+        provider_key_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Streams or buffers inference depending on the `stream` flag.
@@ -171,8 +172,9 @@ class InferenceClient(BaseAPIClient):
         NOTE on api_key vs self.api_key:
         - self.api_key  → platform API key; sent as X-API-Key header
                           so the server can authenticate the caller.
-        - api_key param → LLM provider key (Together, OpenAI, Hyperbolic etc.);
-                          sent only in the JSON body payload, never in headers.
+        - api_key param → direct LLM provider key, sent in the JSON body.
+        - provider_key_id → ID of a previously registered provider credential;
+                            Core resolves it against the authenticated user.
         """
         payload: Dict[str, Any] = {
             "model": model,
@@ -189,6 +191,9 @@ class InferenceClient(BaseAPIClient):
 
         if meta_data:
             payload["meta_data"] = meta_data
+
+        if provider_key_id is not None:
+            payload["provider_key_id"] = provider_key_id
 
         try:
             StreamRequest(**payload)

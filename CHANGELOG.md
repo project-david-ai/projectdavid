@@ -1,3 +1,17 @@
+# [1.116.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.115.0...v1.116.0-dev.1) (2026-11-23)
+
+
+### Features
+
+* **sdk:** support registered provider key IDs in inference streaming ([3a439e3](https://github.com/project-david-ai/projectdavid/commit/3a439e3bddead86422c635bddde1b88e153d8d07))
+
+# [1.115.0-dev.4](https://github.com/project-david-ai/projectdavid/compare/v1.115.0-dev.3...v1.115.0-dev.4) (2026-11-23)
+
+
+### Features
+
+* **sdk:** support registered provider key IDs in inference streaming ([3a439e3](https://github.com/project-david-ai/projectdavid/commit/3a439e3bddead86422c635bddde1b88e153d8d07))
+
 # [1.115.0](https://github.com/project-david-ai/projectdavid/compare/v1.114.0...v1.115.0) (2026-11-22)
 
 
