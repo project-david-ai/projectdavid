@@ -19,7 +19,7 @@ jobs:
     name: Open or retain dev to main PR
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
       github.event.workflow_run.head_branch == 'dev' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
@@ -32,36 +32,13 @@ jobs:
             const run = context.payload.workflow_run;
             const repo = context.repo;
             core.setOutput('needed', 'false');
-            if (run.conclusion !== 'success' || run.event !== 'push' ||
+            if (run.conclusion !== 'success' || !['push', 'workflow_dispatch'].includes(run.event) ||
                 run.head_branch !== 'dev' ||
                 run.head_repository?.full_name !== `${repo.owner}/${repo.repo}`) return;
             const {data: ref} = await github.rest.git.getRef({...repo, ref: 'heads/dev'});
             const approvedHead = ref.object.sha;
-            if (approvedHead !== run.head_sha) {
-              // semantic-release makes exactly one [skip ci] commit after CI succeeds.
-              // Accept that child only if it contains trusted release metadata.
-              const {data: release} = await github.rest.repos.getCommit({
-                ...repo, ref: approvedHead
-              });
-              const versionMatch = /^chore\(release\): (\d+\.\d+\.\d+(?:-[\w.-]+)?) \[skip ci\](?:\r?\n|$)/
-                .exec(release.commit?.message || '');
-              const files = release.files || [];
-              const versionFile = files.find(file => file.filename === 'pyproject.toml');
-              const changelog = files.find(file => file.filename === 'CHANGELOG.md');
-              const versionLines = (versionFile?.patch || '').split(/\r?\n/)
-                .filter(line => /^[+-](?![+-])/.test(line));
-              if (release.parents?.length !== 1 ||
-                  release.parents[0].sha !== run.head_sha ||
-                  release.author?.login !== 'semantic-release-bot' ||
-                  !versionMatch || files.length !== 2 ||
-                  versionFile?.status !== 'modified' ||
-                  changelog?.status !== 'modified' ||
-                  versionLines.length !== 2 ||
-                  !/^-version = "[^"]+"$/.test(versionLines[0]) ||
-                  versionLines[1] !== `+version = "${versionMatch[1]}"` ||
-                  !changelog.patch ||
-                  changelog.patch.split(/\r?\n/).some(line => /^-(?!--)/.test(line))) return;
-            }
+            // Only the exact current dev SHA that passed CI is eligible.
+            if (approvedHead !== run.head_sha) return;
             const {data: comparison} = await github.rest.repos.compareCommitsWithBasehead({
               ...repo, basehead: `main...${approvedHead}`
             });
@@ -90,17 +67,12 @@ jobs:
             const repo = context.repo;
             const run = context.payload.workflow_run;
             const approvedHead = process.env.APPROVED_HEAD;
-            if (!approvedHead || run.conclusion !== 'success' || run.event !== 'push' ||
-                run.head_branch !== 'dev' ||
+            if (!approvedHead || run.conclusion !== 'success' || !['push', 'workflow_dispatch'].includes(run.event) ||
+                run.head_branch !== 'dev' || run.head_sha !== approvedHead ||
                 run.head_repository?.full_name !== `${repo.owner}/${repo.repo}`) return;
             const list = () => github.rest.pulls.list({
               ...repo, state: 'open', base: 'main', head: `${repo.owner}:dev`
             });
-            const {data: existing} = await list();
-            if (existing.length) {
-              core.info(`Existing PR #${existing[0].number} already tracks dev.`);
-              return;
-            }
             const {data: comparison} = await github.rest.repos.compareCommitsWithBasehead({
               ...repo, basehead: `main...${approvedHead}`
             });
@@ -108,14 +80,18 @@ jobs:
             // No unvalidated push may overtake CI while the App token is created.
             const {data: ref} = await github.rest.git.getRef({...repo, ref: 'heads/dev'});
             if (ref.object.sha !== approvedHead) return;
+            const {data: existing} = await list();
+            if (existing.length) {
+              core.info(`Existing PR #${existing[0].number} already tracks dev.`);
+              return;
+            }
             try {
               const {data: pr} = await github.rest.pulls.create({
                 ...repo, title: 'Promote dev to main', head: 'dev', base: 'main',
-                body: 'Automatically opened after successful dev push CI. Human review and merge required. Subsequent dev pushes update this PR automatically; required PR checks must pass on its current head.'
+                body: 'Automatically opened after successful dev CI. Human review and merge required. Subsequent dev pushes update this PR automatically; required checks must pass on its current head.'
               });
               core.info(pr.html_url);
             } catch (error) {
-              // A human or another workflow may have opened the same PR meanwhile.
               if (error.status !== 422 || !(await list()).data.length) throw error;
               core.info('An open dev to main PR already exists.');
             }
