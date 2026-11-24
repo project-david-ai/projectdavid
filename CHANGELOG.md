@@ -1,3 +1,10 @@
+# [1.116.0-dev.2](https://github.com/project-david-ai/projectdavid/compare/v1.116.0-dev.1...v1.116.0-dev.2) (2026-11-24)
+
+
+### Features
+
+* **sdk:** extend web status events with favicon and tool correlation metadata ([0cf6a49](https://github.com/project-david-ai/projectdavid/commit/0cf6a49f7882ce40146ff19fac49dbb8049bb85a))
+
 # [1.116.0-dev.1](https://github.com/project-david-ai/projectdavid/compare/v1.115.0...v1.116.0-dev.1) (2026-11-23)
 
 
