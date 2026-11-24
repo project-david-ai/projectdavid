@@ -154,11 +154,15 @@ class CodeExecutionGeneratedFileEvent(StreamEvent):
 
 @dataclass
 class WebStatusEvent(StreamEvent):
-    """Represents a lifecycle change (complete, failed, tool_output_received)."""
+    """Represents a native web tool lifecycle update."""
 
     status: str
     message: Optional[str] = None
     tool: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    origin_run_id: Optional[str] = None
+    url: Optional[str] = None
+    favicon: Optional[str] = None
 
 
 @dataclass
@@ -229,12 +233,9 @@ class CodeStatusEvent(StreamEvent):
 class ShellStatusEvent(StreamEvent):
     """
     Shell / computer tool lifecycle update.
-
     Mirrors CodeStatusEvent exactly — same fields, different type discriminator
     ("shell_status") so the frontend can route it independently of code_status.
-
     Emitted by ShellExecutionMixin as type='shell_status'.
-
     States: "in_progress" | "completed" | "error"
     """
 
@@ -251,13 +252,10 @@ class ComputerGeneratedFileEvent(StreamEvent):
     """
     A file generated inside the computer shell session and uploaded to the
     ProjectDavid file server.
-
     Mirrors CodeExecutionGeneratedFileEvent exactly — same fields, different
     type discriminator ("computer_generated_file") so the frontend can apply
     shell-specific rendering (e.g. show which session produced the file).
-
     Emitted by ShellExecutionMixin after _harvest_and_upload_files completes.
-
     Fields
     ──────
     filename    Original filename as it existed in the session directory.

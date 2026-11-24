@@ -500,6 +500,10 @@ class SynchronousInferenceStream:
                 status=str(chunk.get("status", "running")),
                 tool=str(chunk.get("tool") or ""),
                 message=str(chunk.get("message") or ""),
+                tool_call_id=chunk.get("tool_call_id"),
+                origin_run_id=chunk.get("origin_run_id"),
+                url=chunk.get("url"),
+                favicon=chunk.get("favicon"),
             )
 
         elif c_type == "engineer_status":
