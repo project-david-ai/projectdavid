@@ -4,10 +4,10 @@ on:
   push:
     branches:
       - '**'
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 env:
   TEST_PYPI_URL: https://test.pypi.org/legacy/
@@ -31,7 +31,6 @@ jobs:
           python -m pip install --upgrade pip
           # PIN VERSIONS TO MATCH .pre-commit-config.yaml FOR STABILITY
           pip install black==24.1.1 isort==5.13.2 bandit safety mypy
-          # Install the SDK and any type stubs
           pip install types-requests types-aiofiles
           pip install -e ".[dev]"
 
@@ -76,7 +75,15 @@ jobs:
     name: 🚀 Tag, Build, and Publish
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')
+    permissions:
+      contents: write
+      actions: write
+      id-token: write
+    concurrency:
+      group: sdk-release-${{ github.repository }}
+      cancel-in-progress: false
+      queue: max
     steps:
       - name: 🧾 Checkout
         uses: actions/checkout@v4
@@ -84,17 +91,39 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify validated commit is still current
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin
+          current=$(git rev-parse "refs/remotes/origin/$GITHUB_REF_NAME")
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo "::notice::Superseded workflow; no release from this run."
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [[ "$GITHUB_REF_NAME" == dev ]] && ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::dev does not contain current main. Complete stable-release synchronization first."
+            exit 1
+          fi
+          echo "active=true" >> "$GITHUB_OUTPUT"
+
       - name: 🐍 Setup Python
+        if: steps.gate.outputs.active == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 🔧 Install Node & Semantic Release
+        if: steps.gate.outputs.active == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: 🔧 Install Plugins
+        if: steps.gate.outputs.active == 'true'
         run: |
           npm install -g semantic-release \
             @semantic-release/git \
@@ -103,31 +132,98 @@ jobs:
             @semantic-release/exec
 
       - name: 🔢 Run Semantic Release
-        id: semantic
+        if: steps.gate.outputs.active == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
+      - name: Verify release tag and select package version
+        id: version
+        if: steps.gate.outputs.active == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" == dev ]]; then
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+            pattern='^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$'
+          else
+            pattern='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          fi
+          tag=$(git tag --points-at HEAD | grep -E "$pattern" | sort -V | tail -n 1 || true)
+          if [[ -z "$tag" ]]; then
+            echo "No release tag at this commit; skipping package publication."
+            exit 0
+          fi
+          # Also restores the version on a retry after the tag already exists.
+          version=${tag#v}
+          python scripts/update_version.py "$version" pyproject.toml
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
       - name: 🏗️ Build Package
+        if: steps.version.outputs.value != ''
         run: |
           pip install build
           python -m build
 
       - name: 🧠 Decide Target
         id: target
+        if: steps.version.outputs.value != ''
         run: |
-          if [[ "${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master" ]]; then
-            echo "repo_url=${{ env.PROD_PYPI_URL }}" >> $GITHUB_OUTPUT
-            echo "token_name=PROD_PYPI_TOKEN" >> $GITHUB_OUTPUT
+          if [[ "$GITHUB_REF_NAME" == main || "$GITHUB_REF_NAME" == master ]]; then
+            echo "repo_url=$PROD_PYPI_URL" >> "$GITHUB_OUTPUT"
+            echo "token_name=PROD_PYPI_TOKEN" >> "$GITHUB_OUTPUT"
           else
-            echo "repo_url=${{ env.TEST_PYPI_URL }}" >> $GITHUB_OUTPUT
-            echo "token_name=TEST_PYPI_TOKEN" >> $GITHUB_OUTPUT
+            echo "repo_url=$TEST_PYPI_URL" >> "$GITHUB_OUTPUT"
+            echo "token_name=TEST_PYPI_TOKEN" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 📦 Publish
+        if: steps.version.outputs.value != ''
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: "__token__"
           password: ${{ secrets[steps.target.outputs.token_name] }}
           repository_url: ${{ steps.target.outputs.repo_url }}
           skip-existing: true
+
+      - name: Synchronize main back into dev
+        if: steps.gate.outputs.active == 'true' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_head=$(git rev-parse HEAD)
+          git fetch origin
+          if [[ $(git rev-parse origin/main) != "$main_head" ]]; then
+            echo "::notice::A newer main commit exists; its workflow owns synchronization."
+            exit 0
+          fi
+          dev_head=$(git rev-parse origin/dev)
+
+          if git merge-base --is-ancestor "$dev_head" "$main_head"; then
+            # Normal path: every dev commit was promoted. No new dev work to validate.
+            if [[ "$dev_head" != "$main_head" ]]; then
+              git push origin "$main_head:refs/heads/dev"
+            fi
+            exit 0
+          fi
+
+          # New work arrived during the stable release. Preserve it with an ordinary merge.
+          if ! git merge-base --is-ancestor "$main_head" "$dev_head"; then
+            worktree="$RUNNER_TEMP/sdk-dev-sync"
+            git worktree add --detach "$worktree" "$dev_head"
+            if ! git -C "$worktree" \
+              -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              merge --no-edit "$main_head"; then
+              git -C "$worktree" merge --abort || true
+              echo "::error::Unexpected main-to-dev conflict; no branch updated."
+              exit 1
+            fi
+            git -C "$worktree" push origin HEAD:refs/heads/dev
+            git worktree remove "$worktree"
+          fi
+
+          # GITHUB_TOKEN pushes do not trigger push CI. Explicitly validate the new dev head.
+          gh workflow run "Lint, Test, Tag, and Publish" --ref dev
