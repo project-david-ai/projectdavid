@@ -1,3 +1,10 @@
+## [1.117.1](https://github.com/project-david-ai/projectdavid/compare/v1.117.0...v1.117.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ci:** eliminate release metadata conflicts and synchronize main into dev ([0280856](https://github.com/project-david-ai/projectdavid/commit/028085690977da68ef6c6494ff792ec9f13216c8))
+
 # [1.117.0](https://github.com/project-david-ai/projectdavid/compare/v1.116.0...v1.117.0) (2026-11-24)
 
 
