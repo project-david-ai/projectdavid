@@ -572,3 +572,92 @@ def test_http_errors_are_propagated():
             client.list_servers()
 
     assert exc_info.value.response.status_code == 500
+
+
+def test_rotate_server_credential_sends_bearer_and_validates_response():
+    requests = []
+    token = "replacement-secret"
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=_server_payload(auth_type="bearer"),
+        )
+
+    with _client(handler) as client:
+        result = client.rotate_server_credential(
+            "mcp_server_1",
+            bearer_token=token,
+        )
+
+    assert type(result) is validator.McpServerRegistrationRead
+    assert result.id == "mcp_server_1"
+    assert result.auth_type == "bearer"
+    assert token not in repr(result)
+
+    assert len(requests) == 1
+    assert requests[0].method == "PUT"
+    assert requests[0].url.path == "/v1/mcp/servers/mcp_server_1/credential"
+    assert requests[0].headers["X-API-Key"] == "pd-key"
+
+    assert json.loads(requests[0].content) == {
+        "type": "bearer",
+        "token": token,
+    }
+
+
+@pytest.mark.parametrize("token", ["", "   ", None, 123])
+def test_rotate_server_credential_rejects_invalid_token(token):
+    def handler(request):
+        raise AssertionError("HTTP request should not occur")
+
+    with _client(handler) as client:
+        with pytest.raises(ValueError, match="non-empty bearer token"):
+            client.rotate_server_credential(
+                "mcp_server_1",
+                bearer_token=token,
+            )
+
+
+@pytest.mark.parametrize("status_code", [403, 404, 409, 422, 500])
+def test_rotate_server_credential_propagates_http_errors(status_code):
+    def handler(request):
+        return httpx.Response(
+            status_code,
+            json={"detail": "Rotation failed"},
+        )
+
+    with _client(handler) as client:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            client.rotate_server_credential(
+                "mcp_server_1",
+                bearer_token="replacement-secret",
+            )
+
+    assert exc_info.value.response.status_code == status_code
+
+
+def test_rotate_server_credential_does_not_log_secret():
+    token = "never-log-this-secret"
+
+    def handler(request):
+        return httpx.Response(
+            422,
+            json={"detail": token},
+        )
+
+    with patch("projectdavid.clients.mcp_client.logging_utility") as logger:
+        with _client(handler) as client:
+            with pytest.raises(httpx.HTTPStatusError):
+                client.rotate_server_credential(
+                    "mcp_server_1",
+                    bearer_token=token,
+                )
+
+    logger.error.assert_called_once_with(
+        "HTTP %d while rotating MCP server credential",
+        422,
+    )
+
+    assert token not in repr(logger.mock_calls)
