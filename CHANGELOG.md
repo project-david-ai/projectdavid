@@ -1,3 +1,10 @@
+# [1.118.0](https://github.com/project-david-ai/projectdavid/compare/v1.117.1...v1.118.0) (2026-11-25)
+
+
+### Features
+
+* **mcp:** expose server credential rotation ([62760ca](https://github.com/project-david-ai/projectdavid/commit/62760caebbe0cea5bf9d63dff1f150f74a633a72))
+
 ## [1.117.1](https://github.com/project-david-ai/projectdavid/compare/v1.117.0...v1.117.1) (2026-11-24)
 
 
