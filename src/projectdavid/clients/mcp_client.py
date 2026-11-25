@@ -311,6 +311,40 @@ class McpClient(BaseAPIClient):
             )
             raise
 
+    def rotate_server_credential(
+        self,
+        server_id: str,
+        *,
+        bearer_token: str,
+    ) -> validator.McpServerRegistrationRead:
+        """Replace a registered MCP server's bearer credential in place."""
+        if not isinstance(bearer_token, str) or not bearer_token.strip():
+            raise ValueError("A non-empty bearer token is required.")
+
+        auth = McpServerAuth(
+            type="bearer",
+            token=bearer_token,
+        )
+
+        try:
+            response = self.client.put(
+                f"/v1/mcp/servers/{server_id}/credential",
+                json={
+                    "type": "bearer",
+                    "token": auth.token.get_secret_value(),
+                },
+            )
+            response.raise_for_status()
+
+            return validator.McpServerRegistrationRead.model_validate(response.json())
+
+        except httpx.HTTPStatusError as exc:
+            logging_utility.error(
+                "HTTP %d while rotating MCP server credential",
+                exc.response.status_code,
+            )
+            raise
+
     def delete_server(self, server_id: str) -> None:
         """Delete an MCP server registration."""
         try:
