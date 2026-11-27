@@ -1,3 +1,11 @@
+# [1.119.0](https://github.com/project-david-ai/projectdavid/compare/v1.118.0...v1.119.0) (2026-11-27)
+
+
+### Features
+
+* **docs:** generate curated Python SDK reference ([545f4c3](https://github.com/project-david-ai/projectdavid/commit/545f4c379b6fbfebc602c30658bfc58335877185))
+* **inference:** support registered BYOK in synchronous streams ([ce1c204](https://github.com/project-david-ai/projectdavid/commit/ce1c2044faf52531692fc43f90b5f4d735e35730))
+
 # [1.118.0](https://github.com/project-david-ai/projectdavid/compare/v1.117.1...v1.118.0) (2026-11-25)
 
 
