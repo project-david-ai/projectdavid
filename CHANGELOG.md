@@ -1,3 +1,10 @@
+# [1.120.0](https://github.com/project-david-ai/projectdavid/compare/v1.119.0...v1.120.0) (2026-11-27)
+
+
+### Features
+
+* **runs:** support status filtering in list_all_runs ([c4f8e85](https://github.com/project-david-ai/projectdavid/commit/c4f8e854af0e20c2aad333dae3a12f0bf59d7143))
+
 # [1.119.0](https://github.com/project-david-ai/projectdavid/compare/v1.118.0...v1.119.0) (2026-11-27)
 
 
