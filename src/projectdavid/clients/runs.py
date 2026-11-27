@@ -628,11 +628,21 @@ class RunsClient(BaseAPIClient):
         self,
         limit: int = 20,
         order: str = "asc",
+        *,
+        status: Optional[Union[str, StatusEnum]] = None,
     ) -> Any:
+        """List runs owned by the authenticated user, optionally by status.
+
+        Core applies the status filter before the limit. The filter requires
+        a Core version that supports the status query parameter.
+        """
         params: Dict[str, Union[str, int]] = {
             "limit": limit,
             "order": order if order in ("asc", "desc") else "asc",
         }
+
+        if status is not None:
+            params["status"] = StatusEnum(status).value
 
         resp = self.client.get(
             "/v1/runs",
