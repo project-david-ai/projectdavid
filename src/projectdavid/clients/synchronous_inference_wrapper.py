@@ -64,6 +64,7 @@ class SynchronousInferenceStream:
         self.message_id: Optional[str] = None
         self.run_id: Optional[str] = None
         self.api_key: Optional[str] = None
+        self.provider_key_id: Optional[str] = None
         self.meta_data: Optional[Dict[str, Any]] = None
 
         self.runs_client: Any | None = None
@@ -101,12 +102,23 @@ class SynchronousInferenceStream:
         run_id: str,
         api_key: Optional[str] = None,
         meta_data: Optional[Dict[str, Any]] = None,
+        provider_key_id: Optional[str] = None,
     ) -> None:
+        """Configure a request using a direct or registered provider credential.
+
+        api_key is a direct provider key, not the Project David API key.
+        provider_key_id selects a registered credential owned by the caller.
+        Omit both for inference that does not require a BYOK credential.
+        """
+        if api_key is not None and provider_key_id is not None:
+            raise ValueError("Provide api_key or provider_key_id, not both")
+
         self.thread_id = thread_id
         self.assistant_id = assistant_id
         self.message_id = message_id
         self.run_id = run_id
         self.api_key = api_key
+        self.provider_key_id = provider_key_id
         self.meta_data = meta_data
 
     def bind_clients(
@@ -134,6 +146,15 @@ class SynchronousInferenceStream:
     ) -> Generator[dict, None, None]:
         resolved_api_key = api_key or self.api_key
         resolved_meta_data = meta_data or self.meta_data
+        if resolved_api_key is not None and self.provider_key_id is not None:
+            raise ValueError("Provide api_key or provider_key_id, not both")
+
+        # Preserve the transport contract for callers that do not use BYOK IDs.
+        credential_kwargs = (
+            {"provider_key_id": self.provider_key_id}
+            if self.provider_key_id is not None
+            else {}
+        )
 
         thread_id = self.thread_id
         message_id = self.message_id
@@ -149,6 +170,7 @@ class SynchronousInferenceStream:
             assistant_id=assistant_id,
             meta_data=resolved_meta_data,
             timeout=timeout_per_chunk,
+            **credential_kwargs,
         ).__aiter__()
 
         active_loop = None
